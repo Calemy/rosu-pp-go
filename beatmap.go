@@ -1,7 +1,7 @@
 package rosuppgo
 
 /*
-#cgo LDFLAGS: -L${SRCDIR}/lib -lrosu -lm
+#cgo LDFLAGS: -L${SRCDIR}/lib -lrosu -lm -Wl,-rpath,${SRCDIR}/lib
 #include <stdint.h>
 #include "lib/librosu.h"
 */
@@ -13,46 +13,46 @@ import (
 )
 
 type Beatmap struct {
-	handle *C.BeatmapHandle
+	handle *C.rosu_pp_BeatmapHandle
 }
 
-func LoadBeatmap(path string) (*Beatmap, error) {
+func (b *Beatmap) Free() {
+	C.rosu_pp_beatmap_free(b.handle)
+	b.handle = nil
+}
+
+func (b *Beatmap) Calculator() Performance {
+	return Performance{
+		handle: C.rosu_pp_performance_new(b.handle),
+	}
+}
+
+func BeatmapFromPath(path string) (*Beatmap, error) {
+	var handle *C.rosu_pp_BeatmapHandle
 	cpath := C.CString(path)
 	defer C.free(unsafe.Pointer(cpath))
 
-	handle := C.load_beatmap(cpath)
-	if handle == nil {
+	res := C.rosu_pp_beatmap_from_path(cpath, &handle)
+
+	if res != 0 {
 		return nil, errors.New("failed to load beatmap")
 	}
 
-	return &Beatmap{
-		handle: handle,
-	}, nil
+	return &Beatmap{handle: handle}, nil
 }
 
-func (b *Beatmap) Calculate(params *Params) *CalculatorResult {
-	result := C.calculate_beatmap(
-		b.handle,
-		params.params,
-	)
+func BeatmapFromBytes(data []byte) (*Beatmap, error) {
+	var handle *C.rosu_pp_BeatmapHandle
 
-	if result == nil {
-		return nil
+	if len(data) == 0 {
+		return nil, errors.New("beatmap data is empty")
 	}
 
-	return &CalculatorResult{
-		PP:           float64(result.pp),
-		PPAim:        float64(result.pp_aim),
-		PPSpeed:      float64(result.pp_speed),
-		PPFlashlight: float64(result.pp_flashlight),
-		PPAcc:        float64(result.pp_acc),
-		Stars:        float64(result.stars),
-	}
-}
+	res := C.rosu_pp_beatmap_from_bytes((*C.uint8_t)(unsafe.Pointer(&data[0])), C.ulong(len(data)), &handle)
 
-func (b *Beatmap) Close() {
-	if b.handle != nil {
-		C.free_beatmap(b.handle)
-		b.handle = nil
+	if res != 0 {
+		return nil, errors.New("failed to load beatmap from bytes")
 	}
+
+	return &Beatmap{handle: handle}, nil
 }
